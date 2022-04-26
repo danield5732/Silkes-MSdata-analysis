@@ -1,13 +1,101 @@
-Version: 1.0
+---
+title: "Silkes-MSdata-analysis"
+author: "danield5732"
+date: "26 4 2022"
+output: html_document
+---
 
-RestoreWorkspace: Default
-SaveWorkspace: Default
-AlwaysSaveHistory: Default
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
 
-EnableCodeIndexing: Yes
-UseSpacesForTab: Yes
-NumSpacesForTab: 2
-Encoding: UTF-8
 
-RnwWeave: knitr
-LaTeX: pdfLaTeX
+
+## R Markdown
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
+## Silkes-MSdata-analysis
+
+```{r}
+rm(list = ls())   # löscht alle Daten vorheriger Programmdurchläufe aus dem Global Environment
+
+library(readxl)   # für Excel-Import
+library(zoo)      # für den Umgang mit NA
+#library(dplyr)    # für slicing, noch nicht gebraucht
+```
+
+Import raw data from Excel file.
+
+```{r}
+raw_data <- readxl::read_excel("211013_PMT_Desinfekt_Robert_CT_dd.xlsx", 
+                               sheet = "Messung 211013 Zus")
+# excel_sheets("211013_PMT_Desinfekt_Robert_CT_dd.xlsx")  # only display available sheets
+```
+
+Extract meta data and measurement data.
+
+```{r}
+column_names_row2 <- which(raw_data[,1] == "Nr.")
+
+measurement_data_start <- match("1", as.data.frame(raw_data)[,1])
+measurement_data_end <- which(raw_data[,2] == "BG") - 1
+LOQ_row <- which(raw_data[,2] == "BG")
+
+measurement_data <- raw_data[measurement_data_start:measurement_data_end, ]
+LOQs <- raw_data[LOQ_row, ]
+```
+
+Create column names.
+Save col1 (Substances) and col2 (chromatographic results) as factors to keep them available for later.
+
+```{r}
+col1 <- unlist(raw_data[column_names_row2-1, ], use.names=FALSE)   # first source row 
+col2 <- unlist(raw_data[column_names_row2, ], use.names=FALSE)       # second source row
+
+col1 <- zoo::na.locf(col1, na.rm=FALSE)          # remove NA by "last observation carried forwards", but remain leading NAs
+
+# factor() is used to keep the information in a handy format.
+col1 <- factor(gsub("NA", "", paste(col1)))              # remove remaining NAs
+col2 <- factor(gsub("NA", "c w/o ISTD", paste(col2)))    # subset NA that may occure due to additional measurement without internal standard
+
+column_names <- paste(col1, col2, sep="_")       # merge col1 and col2 to final column_names 
+
+colnames(measurement_data) <- column_names
+colnames(LOQs) <- column_names
+```
+
+Handle "< BG" by replacement with LOQ/2
+
+```{r}
+measurement_data_BG <- measurement_data
+for(i in 1:length(LOQs)){
+  measurement_data_BG[which(measurement_data_BG[,i] == "< BG"),i] <- toString(as.numeric(LOQs[1,i])/2)
+}
+```
+
+Convert chr-columns to numeric values.
+Handling of remaining/occuring NAs (due to "n.d.") necessary?
+
+```{r}
+measurement_data_BG[,-2] <- as.data.frame(sapply(measurement_data_BG[,-2], as.numeric))
+```
